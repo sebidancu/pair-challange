@@ -1,0 +1,14 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/sebidancu/multiversx-sdk:/Users/sebidancu/multiversx-sdk/vendor-rust/bin:/Users/sebidancu/multiversx-sdk/vmtools:/Users/sebidancu",
+        "RUSTUP_HOME": "/Users/sebidancu/multiversx-sdk/vendor-rust",
+        "CARGO_HOME": "/Users/sebidancu/multiversx-sdk/vendor-rust"
+    },
+    "rust-analyzer.server.extraEnv": {
+        "PATH": "/Users/sebidancu/multiversx-sdk:/Users/sebidancu/multiversx-sdk/vendor-rust/bin:/Users/sebidancu/multiversx-sdk/vmtools:/Users/sebidancu",
+        "RUSTUP_HOME": "/Users/sebidancu/multiversx-sdk/vendor-rust",
+        "CARGO_HOME": "/Users/sebidancu/multiversx-sdk/vendor-rust"
+    },
+    "nuxt.isNuxtApp": false
+}
+

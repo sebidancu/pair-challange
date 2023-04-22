@@ -1,0 +1,20 @@
+[package]
+name = "order-book-pair"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+[dependencies.multiversx-sc]
+version = "=0.39.4"
+features = ["esdt-token-payment-legacy-decode"]
+
+[dependencies.multiversx-sc-modules]
+version = "=0.39.4"
+
+[dependencies.pair]
+path = "../pair"
+
+[dependencies.router]
+path = "../router"
