@@ -391,6 +391,17 @@ pub trait OrdersModule:
         orders_vec
     }
 
+    fn get_sc_balance(&self, token_id: TokenIdentifier) -> BigUint
+    {
+        let nonce = 0u64;
+        let sc = self.blockchain().get_sc_address();
+        let balance = self
+            .blockchain()
+            .get_esdt_balance(&sc, &token_id, nonce);
+
+        balance
+    }
+
     #[view(getOrderIdCounter)]
     #[storage_mapper("order_id_counter")]
     fn order_id_counter(&self) -> SingleValueMapper<u64>;

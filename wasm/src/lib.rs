@@ -6,7 +6,7 @@
 
 // Init:                                 1
 // Endpoints:                           34
-// Async Callback (empty):               1
+// Async Callback:                       1
 // Total number of exported functions:  36
 
 #![no_std]
@@ -52,7 +52,6 @@ multiversx_sc_wasm_adapter::endpoints! {
         getProviderLp
         getProviderAsh
         getProviderRouter
+        callBack
     )
 }
-
-multiversx_sc_wasm_adapter::empty_callback! {}

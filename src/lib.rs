@@ -3,12 +3,12 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
+pub mod callback;
 pub mod common;
 pub mod events;
 pub mod global;
 pub mod orders;
 pub mod validation;
-pub mod callback;
 
 // use ash_callee_proxy::ProxyTrait;
 use common::{DealConfig, FeeConfig, FeeConfigEnum, OrderInputParams};
@@ -21,22 +21,22 @@ pub type PoolResultType<BigUint> = ManagedVec<BigUint, EsdtTokenPayment<BigUint>
 
 pub const SWAP_TOKENS_FIXED_INPUT_FUNC_NAME: &[u8] = b"swapTokensFixedInput";
 
-mod ash_callee_proxy {
-    use crate::PoolResultType;
+// mod ash_callee_proxy {
+//     use crate::PoolResultType;
 
-    multiversx_sc::imports!();
+//     multiversx_sc::imports!();
 
-    #[multiversx_sc::proxy]
-    pub trait CalleeContract {
-        #[payable("*")]
-        #[endpoint(exchange)]
-        fn exchange(
-            &self,
-            token_out: TokenIdentifier,
-            amount_out_min: BigUint,
-        ) -> PoolResultType<Self::Api>;
-    }
-}
+//     #[multiversx_sc::proxy]
+//     pub trait CalleeContract {
+//         #[payable("*")]
+//         #[endpoint(exchange)]
+//         fn exchange(
+//             &self,
+//             token_out: TokenIdentifier,
+//             amount_out_min: BigUint,
+//         ) -> PoolResultType<Self::Api>;
+//     }
+// }
 
 #[multiversx_sc::contract]
 pub trait OrderBookChallange:
@@ -108,6 +108,7 @@ pub trait OrderBookChallange:
     #[payable("*")]
     #[endpoint(order)]
     fn order_endpoint(&self, tokenOut: TokenIdentifier, minOut: BigUint, maxFee: u64) {
+        let tokenIn = self.call_value().single_esdt();
         let provider = self.provider_lp().get();
         let fee_config = FeeConfig {
             fee_type: FeeConfigEnum::Percent,
@@ -231,20 +232,23 @@ pub trait OrderBookChallange:
     fn fill_order_endpoint(&self, order_input: u64) {
         let provider = self.provider_lp().get();
         let order = self.orders(order_input).get();
+        let first_token_id = self.first_token_id().get();
+        let second_token_id = self.second_token_id().get();
 
-        let result: SwapTokensFixedInputResultType<Self::Api> = self
-            .pair_contract_proxy(provider)
-            .swap_tokens_fixed_input(self.first_token_id().get(), order.output_amount.clone())
-            .with_esdt_transfer((self.second_token_id().get(), 0u64, order.input_amount))
-            .execute_on_dest_context();
+        let swap = self.pair_swap(
+            second_token_id,
+            order.input_amount,
+            first_token_id,
+            order.output_amount.clone(),
+        );
 
-        require!(result.amount > order.output_amount, "Wrong amount");
+        require!(swap.amount > order.output_amount, "Wrong amount");
 
         self.send().direct_esdt(
             &order.creator,
             &self.first_token_id().get(),
             0u64,
-            &result.amount,
+            &swap.amount,
         );
     }
 
@@ -257,46 +261,31 @@ pub trait OrderBookChallange:
         amount_out_min: BigUint,
         swap_operations: MultiValueEncoded<SwapOperationType<Self::Api>>,
     ) {
-        let provider = self.provider_router_dex().get();
-        let ash_provider = self.provider_ash().get();
         let order = self.orders(order_input).get();
-
-        let ash_call: PoolResultType<Self::Api> = self
-            .ash_contract_proxy(ash_provider)
-            .exchange(&token_out, amount_out_min)
-            .with_esdt_transfer((
-                self.second_token_id().get(),
-                0u64,
-                order.input_amount.clone(),
-            ))
-            .execute_on_dest_context();
-
-        let nonce = 0u64;
-        let sc = self.blockchain().get_sc_address();
         let first_token_id = self.first_token_id().get();
-        let balance_first_before = self
-            .blockchain()
-            .get_esdt_balance(&sc, &first_token_id, nonce);
+        let second_toke_id = self.second_token_id().get();
+        let balance_first_token_before = self.get_sc_balance(first_token_id.clone());
 
-        for transfer in ash_call.iter() {
+        let ash_swap_call: PoolResultType<Self::Api> = self.ash_swap_call(
+            second_toke_id,
+            order.input_amount.clone(),
+            token_out.clone(),
+            amount_out_min,
+        );
+
+        for transfer in ash_swap_call.iter() {
             if transfer.token_identifier == token_out {
-                let _last_payment: IgnoreValue = self
-                    .router_contract_proxy(provider.clone())
-                    .multi_pair_swap(swap_operations.clone())
-                    .with_esdt_transfer((
-                        transfer.token_identifier.clone(),
-                        0u64,
-                        transfer.amount.clone(),
-                    ))
-                    .execute_on_dest_context();
+                self.router_dex_call(
+                    transfer.token_identifier.clone(),
+                    transfer.amount.clone(),
+                    swap_operations.clone(),
+                );
             }
         }
 
-        let balance_first_after = self
-            .blockchain()
-            .get_esdt_balance(&sc, &first_token_id, nonce);
+        let balance_first_token_after = self.get_sc_balance(first_token_id.clone());
 
-        let transfer_to_user_amount = balance_first_after - balance_first_before;
+        let transfer_to_user_amount = balance_first_token_after - balance_first_token_before;
 
         require!(
             &transfer_to_user_amount >= &order.output_amount,
@@ -345,12 +334,12 @@ pub trait OrderBookChallange:
         }
     }
 
-    #[proxy]
-    fn pair_contract_proxy(&self, to: ManagedAddress) -> pair::Proxy<Self::Api>;
+    // #[proxy]
+    // fn pair_contract_proxy(&self, to: ManagedAddress) -> pair::Proxy<Self::Api>;
 
-    #[proxy]
-    fn router_contract_proxy(&self, to: ManagedAddress) -> router::Proxy<Self::Api>;
+    // #[proxy]
+    // fn router_contract_proxy(&self, to: ManagedAddress) -> router::Proxy<Self::Api>;
 
-    #[proxy]
-    fn ash_contract_proxy(&self, sc_address: ManagedAddress) -> ash_callee_proxy::Proxy<Self::Api>;
+    // #[proxy]
+    // fn ash_contract_proxy(&self, sc_address: ManagedAddress) -> ash_callee_proxy::Proxy<Self::Api>;
 }
