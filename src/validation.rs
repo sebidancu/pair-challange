@@ -42,13 +42,13 @@ pub trait ValidationModule: common::CommonModule {
                     params.fee_config.fixed_fee < params.amount,
                     "Invalid fee config fixed amount"
                 );
-            },
+            }
             FeeConfigEnum::Percent => {
                 require!(
                     params.fee_config.percent_fee < PERCENT_BASE_POINTS,
                     "Percent value above maximum value"
                 );
-            },
+            }
         }
 
         let amount_after_fee = self.calculate_amount_after_fee(&params.amount, &params.fee_config);
@@ -89,6 +89,30 @@ pub trait ValidationModule: common::CommonModule {
         );
 
         Payment { token_id, amount }
+    }
+
+    fn require_valid_payment(&self) -> Payment<Self::Api> {
+        let (token_id, amount) = self.call_value().single_fungible_esdt();
+        let first_token_id = self.first_token_id().get();
+        let second_token_id = self.second_token_id().get();
+
+        let mut payment: Payment<Self::Api> = Payment {
+            token_id: second_token_id.clone(),
+            amount: amount.clone(),
+        };
+        require!(
+            token_id != first_token_id || token_id != second_token_id,
+            "Token in not supported"
+        );
+
+        if token_id == first_token_id {
+            payment = Payment {
+                token_id: first_token_id.clone(),
+                amount: amount.clone(),
+            };
+        }
+
+        payment
     }
 
     fn require_valid_match_input_order_ids(&self, order_ids: &ManagedVec<u64>) {

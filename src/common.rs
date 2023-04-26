@@ -4,7 +4,7 @@ multiversx_sc::derive_imports!();
 pub const MAX_ORDERS_PER_USER: usize = 100;
 pub const PERCENT_BASE_POINTS: u64 = 100_000;
 pub const FEE_PENALTY_INCREASE_EPOCHS: u64 = 5;
-pub const FEE_PENALTY_INCREASE_PERCENT: u64 = 1_000;
+pub const FEE_PENALTY_INCREASE_PERCENT: u64 = 10_000;
 pub const FREE_ORDER_FROM_STORAGE_MIN_PENALTIES: u64 = 6;
 
 #[derive(
@@ -15,7 +15,7 @@ pub enum OrderType {
     Sell,
 }
 
-#[derive(ManagedVecItem, Clone)]
+#[derive(ManagedVecItem, Clone, TopEncode, TopDecode, TypeAbi)]
 pub struct Payment<M: ManagedTypeApi> {
     pub token_id: TokenIdentifier<M>,
     pub amount: BigUint<M>,
@@ -135,6 +135,15 @@ pub trait CommonModule {
     #[view(getProviderRouter)]
     #[storage_mapper("providerrouter")]
     fn provider_router_dex(&self) -> SingleValueMapper<ManagedAddress>;
+
+    #[view(getFeeResolver)]
+    #[storage_mapper("feeresolver")]
+    fn fee_resolver(&self, address: ManagedAddress) -> VecMapper<Payment<Self::Api>>;
+
+    #[view(getMinFee)]
+    #[storage_mapper("minfee")]
+    fn min_fee(&self) -> SingleValueMapper<u64>;
+
 
 
 

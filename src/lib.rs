@@ -3,16 +3,15 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
-pub mod callback;
 pub mod common;
 pub mod events;
 pub mod global;
 pub mod orders;
+pub mod proxy;
 pub mod validation;
 
 // use ash_callee_proxy::ProxyTrait;
-use common::{DealConfig, FeeConfig, FeeConfigEnum, OrderInputParams};
-use router::multi_pair_swap::ProxyTrait as _;
+use common::{DealConfig, FeeConfig, FeeConfigEnum, OrderInputParams, Payment};
 
 pub type SwapTokensFixedInputResultType<BigUint> = EsdtTokenPayment<BigUint>;
 type SwapOperationType<M> =
@@ -45,7 +44,7 @@ pub trait OrderBookChallange:
     + events::EventsModule
     + common::CommonModule
     + validation::ValidationModule
-    + callback::CallbackModule
+    + proxy::ProxyModule
 {
     #[init]
     fn init(&self, first_token_id: TokenIdentifier, second_token_id: TokenIdentifier) {
@@ -54,70 +53,21 @@ pub trait OrderBookChallange:
     }
 
     #[payable("*")]
-    #[endpoint(createBuyOrder)]
-    fn create_buy_order_endpoint(&self, amount: BigUint) {
-        let admin = self.admin().get();
-
-        let fee_config = FeeConfig {
-            fee_type: FeeConfigEnum::Percent,
-            fixed_fee: BigUint::from(0u64),
-            percent_fee: 1_000,
-        };
-
-        let order_input = OrderInputParams {
-            amount,
-            match_provider: admin,
-            fee_config,
-            deal_config: DealConfig {
-                match_provider_percent: 1_000,
-            },
-        };
-        self.require_global_op_not_ongoing();
-        self.require_valid_order_input_params(&order_input);
-        let payment = self.require_valid_buy_payment();
-
-        self.create_order(payment, order_input, common::OrderType::Buy);
-    }
-
-    #[payable("*")]
-    #[endpoint(createSellOrder)]
-    fn create_sell_order_endpoint(&self, amount: BigUint) {
-        let admin = self.admin().get();
-
-        let fee_config = FeeConfig {
-            fee_type: FeeConfigEnum::Percent,
-            fixed_fee: BigUint::from(0u64),
-            percent_fee: 1_000,
-        };
-
-        let order_input = OrderInputParams {
-            amount,
-            match_provider: admin,
-            fee_config,
-            deal_config: DealConfig {
-                match_provider_percent: 1_000,
-            },
-        };
-        self.require_global_op_not_ongoing();
-        self.require_valid_order_input_params(&order_input);
-        let payment = self.require_valid_sell_payment();
-
-        self.create_order(payment, order_input, common::OrderType::Sell);
-    }
-
-    #[payable("*")]
     #[endpoint(order)]
-    fn order_endpoint(&self, tokenOut: TokenIdentifier, minOut: BigUint, maxFee: u64) {
-        let tokenIn = self.call_value().single_esdt();
+    fn order_endpoint(&self, tokenout: TokenIdentifier, minout: BigUint, maxfee: u64) {
+        require!(
+            maxfee > self.min_fee().get(),
+            "Maximum fee must be greater than minimum fee!"
+        );
         let provider = self.provider_lp().get();
         let fee_config = FeeConfig {
             fee_type: FeeConfigEnum::Percent,
             fixed_fee: BigUint::zero(),
-            percent_fee: maxFee,
+            percent_fee: maxfee,
         };
 
         let order_input = OrderInputParams {
-            amount: minOut.clone(),
+            amount: minout.clone(),
             match_provider: provider,
             fee_config,
             deal_config: DealConfig {
@@ -126,27 +76,13 @@ pub trait OrderBookChallange:
         };
         self.require_global_op_not_ongoing();
 
-        let payment = self.require_valid_sell_payment();
+        let payment = self.require_valid_payment();
 
-        if tokenOut == self.first_token_id().get() {
+        if tokenout == self.first_token_id().get() {
             self.create_order(payment, order_input, common::OrderType::Sell);
-        } else if tokenOut == self.second_token_id().get() {
+        } else if tokenout == self.second_token_id().get() {
             self.create_order(payment, order_input, common::OrderType::Buy);
         }
-    }
-
-    #[endpoint(matchOrders)]
-    fn match_orders_endpoint(&self, order_vec: MultiValueEncoded<u64>) {
-        // order_vec:MultiValueEncoded<ManagedVec<u64>>
-        let mut order_ids: ManagedVec<u64> = ManagedVec::new();
-
-        for order in order_vec {
-            order_ids.push(order);
-        }
-        self.require_global_op_not_ongoing();
-        self.require_valid_match_input_order_ids(&order_ids);
-
-        self.match_orders(order_ids);
     }
 
     #[endpoint(cancelOrders)]
@@ -171,66 +107,57 @@ pub trait OrderBookChallange:
         self.free_orders(order_ids);
     }
 
+    #[only_owner]
     #[endpoint(setProvider)]
     fn set_provider(&self, address: ManagedAddress) {
         self.provider_lp().set(address);
     }
 
+    #[only_owner]
+    #[endpoint(setMinFee)]
+    fn set_min_fee(&self, minfee: u64) {
+        self.min_fee().set(minfee);
+    }
+
+    #[only_owner]
     #[endpoint(changeFirstToken)]
     fn change_first_token_id(&self, first_token_id: TokenIdentifier) {
         self.first_token_id().set(&first_token_id);
     }
+
+    #[only_owner]
     #[endpoint(changeSecondToken)]
     fn change_second_token_id(&self, second_token_id: TokenIdentifier) {
         self.second_token_id().set(&second_token_id);
     }
 
     // added
+    #[only_owner]
     #[endpoint(setAdmin)]
     fn set_admin(&self, address: ManagedAddress) {
         self.admin().set(address);
     }
 
+    #[only_owner]
     #[endpoint(setProviderAsh)]
     fn set_ash(&self, address: ManagedAddress) {
         self.provider_ash().set(address);
     }
 
+    #[only_owner]
     #[endpoint(setRouterDex)]
     fn set_router(&self, address: ManagedAddress) {
         self.provider_router_dex().set(address);
-    }
-
-    #[endpoint(setUsdt)]
-    fn set_usdt(&self, tokenid: TokenIdentifier) {
-        self.usdtid().set(&tokenid);
-    }
-
-    #[endpoint(setMex)]
-    fn set_mex(&self, tokenid: TokenIdentifier) {
-        self.mexid().set(&tokenid);
     }
 
     #[view(getAdmin)]
     #[storage_mapper("admin")]
     fn admin(&self) -> SingleValueMapper<ManagedAddress>;
 
-    #[view(getFlagbiguint)]
-    #[storage_mapper("flagbiguint")]
-    fn flagbiguint(&self) -> SingleValueMapper<BigUint>;
-
-    #[view(getUsdtid)]
-    #[storage_mapper("usdtid")]
-    fn usdtid(&self) -> SingleValueMapper<TokenIdentifier>;
-
-    #[view(getMexid)]
-    #[storage_mapper("mexid")]
-    fn mexid(&self) -> SingleValueMapper<TokenIdentifier>;
-
+    // created just for testing pair swap only
     #[payable("*")]
     #[endpoint(fillOrder)]
     fn fill_order_endpoint(&self, order_input: u64) {
-        let provider = self.provider_lp().get();
         let order = self.orders(order_input).get();
         let first_token_id = self.first_token_id().get();
         let second_token_id = self.second_token_id().get();
@@ -265,6 +192,7 @@ pub trait OrderBookChallange:
         let first_token_id = self.first_token_id().get();
         let second_toke_id = self.second_token_id().get();
         let balance_first_token_before = self.get_sc_balance(first_token_id.clone());
+        let caller = self.blockchain().get_caller();
 
         let ash_swap_call: PoolResultType<Self::Api> = self.ash_swap_call(
             second_toke_id,
@@ -285,61 +213,37 @@ pub trait OrderBookChallange:
 
         let balance_first_token_after = self.get_sc_balance(first_token_id.clone());
 
-        let transfer_to_user_amount = balance_first_token_after - balance_first_token_before;
+        let amount_after_swap = balance_first_token_after - balance_first_token_before;
 
-        require!(
-            &transfer_to_user_amount >= &order.output_amount,
-            "Wrong amount"
-        );
+        require!(&amount_after_swap >= &order.output_amount, "Wrong amount");
 
-        self.send().direct_esdt(
-            &order.creator,
-            &first_token_id,
-            0u64,
-            &transfer_to_user_amount,
-        );
+        let fee_amount_out = self.fee_amount(order.clone(), amount_after_swap.clone());
+
+        let deposit = Payment {
+            token_id: first_token_id.clone(),
+            amount: fee_amount_out.clone(),
+        };
+        self.fee_resolver(caller).push(&deposit);
+
+        let amount_to_transfer = amount_after_swap - fee_amount_out;
+
+        self.send()
+            .direct_esdt(&order.creator, &first_token_id, 0u64, &amount_to_transfer);
     }
 
-    // to delete
     #[payable("*")]
-    #[endpoint(fund)]
-    fn fund(&self) {}
+    #[endpoint(deposit)]
+    fn deposit(&self) {}
 
-    #[only_owner]
-    #[payable("*")]
-    #[endpoint(withdraw)]
-    fn withdraw(&self) {
+    #[endpoint(claim)]
+    fn claim(&self) {
         let caller = self.blockchain().get_caller();
-        let nonce = 0u64;
+        let deposits = self.fee_resolver(caller.clone());
 
-        let sc = self.blockchain().get_sc_address();
-
-        let first_token_id = self.first_token_id().get();
-        let balance_first = self
-            .blockchain()
-            .get_esdt_balance(&sc, &first_token_id, nonce);
-
-        let second_token_id = self.second_token_id().get();
-        let balance_second = self
-            .blockchain()
-            .get_esdt_balance(&sc, &second_token_id, nonce);
-
-        if balance_first > BigUint::from(0u64) {
-            self.send()
-                .direct_esdt(&caller, &first_token_id, nonce, &balance_first);
+        for deposit in deposits.iter(){
+            self.send().direct_esdt(&caller, &deposit.token_id, 0u64, &deposit.amount);
         }
-        if balance_second > BigUint::from(0u64) {
-            self.send()
-                .direct_esdt(&caller, &second_token_id, nonce, &balance_second);
-        }
+
+        self.fee_resolver(caller).clear();
     }
-
-    // #[proxy]
-    // fn pair_contract_proxy(&self, to: ManagedAddress) -> pair::Proxy<Self::Api>;
-
-    // #[proxy]
-    // fn router_contract_proxy(&self, to: ManagedAddress) -> router::Proxy<Self::Api>;
-
-    // #[proxy]
-    // fn ash_contract_proxy(&self, sc_address: ManagedAddress) -> ash_callee_proxy::Proxy<Self::Api>;
 }

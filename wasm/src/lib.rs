@@ -5,9 +5,9 @@
 ////////////////////////////////////////////////////
 
 // Init:                                 1
-// Endpoints:                           34
-// Async Callback:                       1
-// Total number of exported functions:  36
+// Endpoints:                           29
+// Async Callback (empty):               1
+// Total number of exported functions:  31
 
 #![no_std]
 #![feature(alloc_error_handler, lang_items)]
@@ -18,29 +18,22 @@ multiversx_sc_wasm_adapter::panic_handler!();
 multiversx_sc_wasm_adapter::endpoints! {
     order_book_pair
     (
-        createBuyOrder
-        createSellOrder
         order
-        matchOrders
         cancelOrders
         cancelAllOrders
         freeOrders
         setProvider
+        setMinFee
         changeFirstToken
         changeSecondToken
         setAdmin
         setProviderAsh
         setRouterDex
-        setUsdt
-        setMex
         getAdmin
-        getFlagbiguint
-        getUsdtid
-        getMexid
         fillOrder
         resolve
-        fund
-        withdraw
+        deposit
+        claim
         startGlobalOperation
         stopGlobalOperation
         getAddressOrderIds
@@ -52,6 +45,9 @@ multiversx_sc_wasm_adapter::endpoints! {
         getProviderLp
         getProviderAsh
         getProviderRouter
-        callBack
+        getFeeResolver
+        getMinFee
     )
 }
+
+multiversx_sc_wasm_adapter::empty_callback! {}

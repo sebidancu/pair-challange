@@ -402,6 +402,16 @@ pub trait OrdersModule:
         balance
     }
 
+    fn fee_amount(&self, order: Order<Self::Api>, amount: BigUint) -> BigUint
+    {
+        let resolver_amount = self.rule_of_three(
+            &amount,
+            &PERCENT_BASE_POINTS.into(),
+            &order.fee_config.percent_fee.into() ,
+        );
+        resolver_amount
+    }
+
     #[view(getOrderIdCounter)]
     #[storage_mapper("order_id_counter")]
     fn order_id_counter(&self) -> SingleValueMapper<u64>;
